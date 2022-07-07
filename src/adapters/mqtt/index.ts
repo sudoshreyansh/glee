@@ -41,6 +41,7 @@ class MqttAdapter extends Adapter {
 
       const certsConfig = process.env.GLEE_SERVER_CERTS?.split(',').map(t => t.split(':'))
       const certs = certsConfig?.filter(tuple => tuple[0] === this.serverName)?.map(t => fs.readFileSync(t[1])) // eslint-disable-line security/detect-non-literal-fs-filename
+      const qos = serverBinding && serverBinding.lastWill && serverBinding.lastWill.qos ? serverBinding.lastWill.qos : 0;
 
       this.client = mqtt.connect({
         host: url.host,
@@ -50,7 +51,7 @@ class MqttAdapter extends Adapter {
         clean: serverBinding && serverBinding.cleanSession,
         will: serverBinding && serverBinding.will && {
           topic: serverBinding && serverBinding.lastWill && serverBinding.lastWill.topic ? serverBinding.lastWill.topic : undefined,
-          qos: serverBinding && serverBinding.lastWill && serverBinding.lastWill.qos ? serverBinding.lastWill.qos : undefined,
+          qos,
           payload: serverBinding && serverBinding.lastWill && serverBinding.lastWill.message ? serverBinding.lastWill.message : undefined,
           retain: serverBinding && serverBinding.lastWill && serverBinding.lastWill.retain ? serverBinding.lastWill.retain : undefined,
         },
@@ -58,6 +59,7 @@ class MqttAdapter extends Adapter {
         username: userAndPasswordSecurityReq ? process.env.GLEE_USERNAME : undefined,
         password: userAndPasswordSecurityReq ? process.env.GLEE_PASSWORD : undefined,
         ca: X509SecurityReq ? certs : undefined,
+        customHandleAcks: this._customAckHandler
       })
 
       this.client.on('connect', () => {
@@ -80,6 +82,8 @@ class MqttAdapter extends Adapter {
       })
 
       this.client.on('message', (channel, message, mqttPacket) => {
+        if ( qos > 0 ) return;  // Ignore higher qos messages as they have already been processed
+
         const msg = this._createMessage(mqttPacket as IPublishPacket)
         this.emit('message', msg, this.client)
       })
@@ -136,6 +140,15 @@ class MqttAdapter extends Adapter {
       headers,
       channel: packet.topic,
     })
+  }
+
+  _customAckHandler(channel, message, mqttPacket, done) {
+    const msg = this._createMessage(mqttPacket as IPublishPacket)
+
+    msg.on('success', () => done(0))
+    msg.on('failure', () => done(0x80))
+
+    this.emit('message', msg, this.client)
   }
 }
 

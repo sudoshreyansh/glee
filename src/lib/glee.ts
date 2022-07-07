@@ -223,6 +223,7 @@ export default class Glee extends EventEmitter {
 
     async.seq(...mws)(message, (err: Error, msg: GleeMessage) => {
       if (err) {
+        message.failure()
         this._processError(errorMiddlewares, err, msg)
         return
       }
@@ -238,6 +239,7 @@ export default class Glee extends EventEmitter {
           }
         })
       } else {
+        message.success()
         debug('Inbound pipeline finished.')
       }
     })
